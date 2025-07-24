@@ -7,23 +7,15 @@ import { Token } from './Token.sol';
 // immutables can only be set once, so it would be mostly about providing a better API / interface to consumers, not really security
 
 contract Factory {
-    uint256 public constant MAX_RAISED = 3 ether;
-    uint256 public constant MAX_SOLD = 500_000 ether;
-    
+	uint256 public constant TOTAL_SUPPLY = 1_000_000 ether;
+
 	/** fee */
 	uint256 public immutable fee;
     /** the deployer */
     address public immutable owner;
 
-	mapping(address => TokenSale) private tokens;
-    address[] private tokenIdxs;
-
-    struct TokenSale {
-        address token;
-        uint256 sold;
-        uint256 raised;
-        bool isAvailable;
-    }
+	mapping(address => Token) private tokens;
+    address[] private tokenKeys;
 
 	event Created(address indexed token);
     event Bought(address indexed token, uint256 amount);
@@ -33,12 +25,12 @@ contract Factory {
         fee = _fee;
     }
 
-	function getTokens() public view returns (address[] memory) {
-		return tokenIdxs;
+	function getTokenKeys() public view returns (address[] memory) {
+		return tokenKeys;
 	}
 	
-    function getToken(uint idx) public view returns (address) {
-        return tokenIdxs[idx];
+    function getTokenKey(uint idx) public view returns (address) {
+        return tokenKeys[idx];
     }
 
 	/**
@@ -46,118 +38,109 @@ contract Factory {
 	 * mostly because the other variable would need to be updated whenever pushing or poping an element, even though reading is the same
 	*/
     function getTokensLength() public view returns (uint) {
-        return tokenIdxs.length;
+        return tokenKeys.length;
     }
 
-    function getTokenSaleByIdx(
+    function getTokenByKeyIdx(
         uint _idx
-    ) public view returns (TokenSale memory) {
-        return tokens[tokenIdxs[_idx]];
+    ) public view returns (Token) {
+        return tokens[tokenKeys[_idx]];
     }
 
-    function getTokenSaleByAddress(
+    function getToken(
         address addr
-    ) public view returns (TokenSale memory) {
+    ) public view returns (Token) {
         return tokens[addr];
-    }
-
-    function getCost(uint256 _sold) public pure returns (uint256) {
-        uint256 floor = 0.0001 ether;
-        uint256 step = 0.0001 ether;
-        uint256 increment = 10000 ether;
-
-        uint256 cost = (step * (_sold / increment)) + floor;
-        return cost;
     }
 
     function create(
         string calldata _name,
         string calldata _symbol
-    ) external payable {
-        // make sure fee is correct
-        require(msg.value >= fee, 'Fee is not enough');
+    ) external payable returns (address) {
+        // make sure fee is covered
+        require(msg.value >= fee, string(abi.encodePacked('Fee is low, it needs to be equal or greater than ', fee)));
 
-        address _owner = msg.sender;
+		// the creator of the token
+        address _creator = msg.sender;
 
+		// total supply - could eventually be set by the creator
+		uint256 _totalSupply = TOTAL_SUPPLY;
+
+		// @gas: using values directly instead of saving it to temporary variable would decrease gas cost (eg. _creator/msg.sender)
         // create a new token
-        Token token = new Token(_owner, _name, _symbol, 1_000_000 ether);
-        address tokenAddress = address(token);
+        Token _token = new Token(_creator, _name, _symbol, _totalSupply);
+        address _tokenAddress = address(_token);
 
         // save the token
-        tokenIdxs.push(tokenAddress);
+        tokenKeys.push(_tokenAddress);
+        tokens[_tokenAddress] = _token;
 
-        // list the token
-        TokenSale memory sale = TokenSale(
-            tokenAddress,
-            0,
-            0,
-            true
-        );
-        tokens[tokenAddress] = sale;
+        emit Created(_tokenAddress);
 
-        emit Created(tokenAddress);
+		return _tokenAddress;
     }
 
     function buy(
-		address _token,
+		address _tokenAddress,
 		uint256 _amount
 	) external payable {
-        TokenSale storage sale = tokens[_token];
+        Token _token = tokens[_tokenAddress];
 
         // check conditions
-        require(sale.isAvailable, 'Buying is closed');
-        require(_amount >= 1 ether, 'Amount too low');
-        require(_amount <= 10000 ether, 'Amount exceeded');
+        require(_token.isAvailable(), 'This token has reached its goal, its not available anymore');
+        require(_amount >= 1 ether, 'Amount too low, it needs to be equal or greater than 1');
+        require(_amount < 10 ether, 'Amount too high, it needs to be lower than 10');
 
-        // calculate the price of one token based upon total bought
-        uint256 cost = getCost(sale.sold);
-
-        uint256 price = cost * (_amount / 10 ** 18);
+        uint256 _price = _token.getCost() * (_amount / 1 ether);
 
         // make sure enough eth is sent
-        require(msg.value >= price, 'Insufficient ETH received!');
+        require(msg.value >= _price, string(abi.encodePacked('Not enough ETH, it needs to be at least ', _price)));
 
         // update sale
-        sale.sold += _amount;
-        sale.raised += price;
+		_token.increaseSold(_amount);
+        _token.increaseRaised(msg.value);
 
-        // make sure fund raising goal isnt met
-        if (sale.sold >= MAX_SOLD || sale.raised >= MAX_RAISED) {
-            sale.isAvailable = false;
+        // make sure raised goal nor sold goal arent met
+        if (_token.getSold() >= _token.SOLD_GOAL() || _token.getRaised() >= _token.RAISED_GOAL()) {
+            _token.setAvailable(false);
         }
 
 		// transfer tokens
-        Token(_token).transfer(msg.sender, _amount);
+		_token.transfer(msg.sender, _amount);
+
+        // @gas: if i didnt have the _token variable created, i could simply do the following and save the _token's allocation gas cost
+		// Token(_tokenAddress).transfer(msg.sender, _amount);
 
         // emit an event
-		emit Bought(_token, _amount);
+		emit Bought(_tokenAddress, _amount);
     }
 
 	function deposit(
-		address _token
+		address _tokenAddress
 	) external payable {
 		// the remaining token balance and the ETH raised would go into a liquidity pool like Uniswap V3
 		// for simplicity, we will just transfer remaining tokens and ETH raised to the creator
-		Token token = Token(_token);
-		TokenSale memory sale = tokens[_token];
+		Token _token = tokens[_tokenAddress];
 
-		require(!sale.isAvailable, 'Target not reached');
+		// check if its still available
+		require(!_token.isAvailable(), 'Target not reached yet');
 
 		// transfer tokens
-        token.transfer(token.creator, token.balanceOf(address(this)));
+        _token.transfer(_token.creator(), _token.balanceOf(address(this)));
 
 		// transfer eth raised
-		(bool success, ) = payable(sale.creator).call{value: sale.raised}('');
-		require(success, 'Eth deposit failed');
+		(bool _success, ) = payable(_token.creator()).call{value: _token.getRaised()}('');
+		require(_success, 'ETH deposit failed');
 	}
 
 	function withdraw(
 		uint256 _amount
 	) external payable {
-		require(msg.sender == owner, 'Not the owner');
+		// check owner
+		require(msg.sender == owner, 'You cannot withdraw');
 
 		// transfer eth raised
-		(bool success, ) = payable(owner).call{value: _amount}('');
-		require(success, 'Eth withdraw failed');
+		(bool _success, ) = payable(owner).call{value: _amount}('');
+		require(_success, 'ETH withdraw failed');
 	}
 }

@@ -20,43 +20,44 @@ describe('Factory', function () {
 
 		// deploy the contract
 		const factory = await Factory.deploy(FEE)
+		const factoryAddress = await factory.getAddress()
 
 		// create token
 		const transaction = await factory.connect(creator).create(NAME, SYMBOL, { value: FEE })
-		const transactionReceipt = await transaction.wait()
+		const transactionReceipt = (await transaction.wait())!
 
-		// get token address
-		const tokenAddress = await factory.getToken(0);
+		// get token
+		//const tokenAddress = await transactionReceipt.getResult() // not working
+		const tokenAddress = await factory.getTokenKey(0);
 		const token = await ethers.getContractAt('Token', tokenAddress)
 
-		return { buyer, creator, deployer, factory, token, transaction, transactionReceipt }
+		return { buyer, creator, deployer, factory, factoryAddress, token, tokenAddress, transaction, transactionReceipt }
 	}
 
 	async function buyTokenFixture() {
-		const AMOUNT = ethers.parseEther('10000')
+		const AMOUNT = ethers.parseEther('5')
 		const COST = ethers.parseEther('1')
 
-		const { buyer, creator, factory, token } = await deployFactoryFixture()
+		const { buyer, creator, factory, factoryAddress, token, tokenAddress } = await deployFactoryFixture()
 
 		// buy tokens
 		const transaction = await factory.connect(buyer).buy(await token.getAddress(), AMOUNT, { value: COST })
 		await transaction.wait()
 
-		return { AMOUNT, COST, buyer, creator, factory, token }
+		return { AMOUNT, COST, buyer, creator, factory, factoryAddress, token, tokenAddress }
 	}
 
 	async function depositFixture() {
 		const COST = ethers.parseEther('2')
+		const { AMOUNT, buyer, creator, factory, token, tokenAddress } = await buyTokenFixture()
 
-		const { AMOUNT, buyer, creator, factory, token } = await buyTokenFixture()
-
-		return { AMOUNT, COST, buyer, creator, factory, token }
+		return { AMOUNT, COST, buyer, creator, factory, token, tokenAddress }
 	}
 
 	async function withdrawFixture() {
-		const { deployer, factory } = await deployFactoryFixture()
+		const { deployer, factory, factoryAddress } = await deployFactoryFixture()
 
-		return { deployer, factory }
+		return { deployer, factory, factoryAddress }
 	}
 
 	describe('Deployment', () => {
@@ -75,8 +76,8 @@ describe('Factory', function () {
 
 	describe('Creating', () => {
 		it('should set the owner', async () => {
-			const { factory, token } = await loadFixture(deployFactoryFixture)
-			expect(await token.owner()).to.equal(await factory.getAddress())
+			const { factory, factoryAddress, token } = await loadFixture(deployFactoryFixture)
+			expect(await token.owner()).to.equal(factoryAddress)
 		})
 
 		it('should set the creator', async () => {
@@ -85,32 +86,32 @@ describe('Factory', function () {
 		})
 
 		it('should set the supply', async () => {
-			const { factory, token } = await loadFixture(deployFactoryFixture)
+			const { factory, factoryAddress, token } = await loadFixture(deployFactoryFixture)
 			const totalSupply = ethers.parseEther('1000000')
-			expect(await token.balanceOf(await factory.getAddress())).to.equal(totalSupply)
+			expect(await token.balanceOf(factoryAddress)).to.equal(totalSupply)
 		})
 
 		it('should update ETH balance', async () => {
-			const { factory } = await loadFixture(deployFactoryFixture)
-			const balance = await ethers.provider.getBalance(factory.getAddress())
+			const { factory, factoryAddress } = await loadFixture(deployFactoryFixture)
+			const balance = await ethers.provider.getBalance(factoryAddress)
 			expect(balance).to.equal(FEE)
 		})
 
-		it('should create the sale', async () => {
-			const { creator, factory, token } = await loadFixture(deployFactoryFixture)
+		it('should create', async () => {
+			const { creator, factory, token, tokenAddress } = await loadFixture(deployFactoryFixture)
 
 			const count = await factory.getTokensLength()
 			expect(count).to.equal(1)
 
-			const tokenAddress = await token.getAddress()
+			const tokenAddress2 = await factory.getTokenKey(0)
+			expect(tokenAddress2).to.equal(tokenAddress)
 
-			const sale = await factory.getTokenSaleByAddress(tokenAddress)
-			expect(sale.token).to.equal(tokenAddress)
-			expect(sale.name).to.equal(NAME)
-			expect(sale.creator).to.equal(creator.address)
-			expect(sale.sold).to.equal(0)
-			expect(sale.raised).to.equal(0)
-			expect(sale.isOpen).to.equal(true)
+			expect(await token.symbol()).to.equal(SYMBOL)
+			expect(await token.name()).to.equal(NAME)
+			expect(await token.creator()).to.equal(creator.address)
+			expect(await token.getSold()).to.equal(0)
+			expect(await token.getRaised()).to.equal(0)
+			expect(await token.isAvailable()).to.equal(true)
 		})
 
 		it('should emit an event', async () => {
@@ -126,64 +127,56 @@ describe('Factory', function () {
 
 	describe('Buying', () => {
 		it('should update ETH balance', async () => {
-			const { COST, factory } = await loadFixture(buyTokenFixture)
+			const { COST, factoryAddress } = await loadFixture(buyTokenFixture)
 
-			const balance = await ethers.provider.getBalance(await factory.getAddress())
+			const balance = await ethers.provider.getBalance(factoryAddress)
 			expect(balance).to.equal(FEE + COST)
 		})
 
-		it('should update token balance', async () => {
-			const { AMOUNT, buyer, token } = await loadFixture(buyTokenFixture)
+		it('should update token details', async () => {
+			const { AMOUNT, COST, buyer, token } = await loadFixture(buyTokenFixture)
 
+			// check eth balance
 			const balance = await token.balanceOf(buyer.address)
 			expect(balance).to.equal(AMOUNT)
-		})
 
-		it('should update token sale', async () => {
-			const { AMOUNT, COST, factory, token } = await loadFixture(buyTokenFixture)
+			// check token details
+			expect(await token.getSold()).to.equal(AMOUNT)
+			expect(await token.getRaised()).to.equal(COST)
+			expect(await token.isAvailable()).to.equal(true)
 
-			const sale = await factory.getTokenSaleByAddress(await token.getAddress())
-			expect(sale.sold).to.equal(AMOUNT)
-			expect(sale.raised).to.equal(COST)
-			expect(sale.isOpen).to.equal(true)
-		})
-
-		it('should increase the base cost', async () => {
-			const { factory, token } = await loadFixture(buyTokenFixture)
-
-			const sale = await factory.getTokenSaleByAddress(await token.getAddress())
-			const cost = await factory.getCost(sale.sold)
-			expect(cost).to.equal(ethers.parseEther('0.0002'))
+			// check base cost was increased
+			const cost = await token.getCost()
+			expect(cost).to.equal(await token.COST_STEP())
 		})
 	})
 
 	describe('Depositing', () => {
 		it('should deposit and close the sale', async () => {
-			const { AMOUNT, COST, buyer, creator, factory, token } = await loadFixture(depositFixture)
+			const { AMOUNT, COST, buyer, creator, factory, token, tokenAddress } = await loadFixture(depositFixture)
 
-			const tokenAddress = await token.getAddress()
 			const buyTx = await factory.connect(buyer).buy(tokenAddress, AMOUNT, { value: COST })
 			await buyTx.wait()
 
-			const sale = await factory.getTokenSaleByAddress(tokenAddress)
-			expect(sale.isOpen).to.equal(false)
+			expect(await token.isAvailable()).to.equal(false)
 
 			const depositTx = await factory.connect(creator).deposit(tokenAddress)
 			await depositTx.wait()
 
 			const balance = await token.balanceOf(creator.address)
-			expect(balance).to.equal(ethers.parseEther('980000'))
+			const calculcatedCost = ethers.parseEther(String(Number(ethers.formatEther(COST)) * Number(ethers.formatEther(AMOUNT))))
+			expect(balance).to.equal(await factory.TOTAL_SUPPLY() - calculcatedCost)
 		})
 	})
 
 	describe('Withdrawing fees', () => {
 		it('should update ETH balance', async () => {
-			const { deployer, factory } = await loadFixture(withdrawFixture)
+			const { deployer, factory, factoryAddress } = await loadFixture(withdrawFixture)
 
 			const transaction = await factory.connect(deployer).withdraw(FEE)
 			await transaction.wait()
 
-			const balance = await ethers.provider.getBalance(await factory.getAddress())
+			const balance = await ethers.provider.getBalance(factoryAddress)
 			expect(balance).to.equal(0)
 		})
 	})
