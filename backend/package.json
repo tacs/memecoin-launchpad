@@ -1,0 +1,27 @@
+{
+	"name": "voting",
+	"version": "1.0.0",
+	"dependencies": {
+		"@openzeppelin/contracts": "^5.3.0",
+		"node-gyp-build": "^4.8.4"
+	},
+	"devDependencies": {
+		"@nomicfoundation/hardhat-toolbox": "^6.0.0",
+		"@typechain/ethers-v6": "^0.5.1",
+		"@typechain/hardhat": "^9.1.0",
+		"hardhat": "^2.25.0",
+		"typechain": "^8.3.2"
+	},
+	"prettier": {
+		"bracketSpacing": true,
+		"singleQuote": true
+	},
+	"scripts": {
+		"web3:clean": "hardhat clean",
+		"web3:compile": "hardhat compile",
+		"web3:deploy": "hardhat ignition deploy ignition/modules/Factory.ts --network localhost",
+		"web3:deployReset": "hardhat ignition deploy ignition/modules/Factory.ts --network localhost --reset",
+		"web3:serve": "hardhat node",
+		"web3:test": "hardhat test"
+	}
+}
