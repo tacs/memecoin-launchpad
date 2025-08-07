@@ -7,6 +7,7 @@ describe('Factory', function () {
 	const FEE = ethers.parseEther('0.01')
 	const NAME = 'Tacs'
 	const SYMBOL = 'TCS'
+	const TOTAL_SUPPLY = ethers.parseEther('1000000')
 
 	async function deployFactoryFixture() {
 		// fetch accounts
@@ -23,12 +24,12 @@ describe('Factory', function () {
 		const factoryAddress = await factory.getAddress()
 
 		// create token
-		const transaction = await factory.connect(creator).create(NAME, SYMBOL, { value: FEE })
+		const transaction = await factory.connect(creator).create(NAME, SYMBOL, TOTAL_SUPPLY, { value: FEE })
 		const transactionReceipt = (await transaction.wait())!
 
 		// get token
 		//const tokenAddress = await transactionReceipt.getResult() // not working
-		const tokenAddress = await factory.getTokenKey(0);
+		const tokenAddress = await factory.getToken(0);
 		const token = await ethers.getContractAt('Token', tokenAddress)
 
 		return { buyer, creator, deployer, factory, factoryAddress, token, tokenAddress, transaction, transactionReceipt }
@@ -42,9 +43,9 @@ describe('Factory', function () {
 
 		// buy tokens
 		const transaction = await factory.connect(buyer).buy(await token.getAddress(), AMOUNT, { value: COST })
-		await transaction.wait()
+		const transactionReceipt = (await transaction.wait())!
 
-		return { AMOUNT, COST, buyer, creator, factory, factoryAddress, token, tokenAddress }
+		return { AMOUNT, COST, buyer, creator, factory, factoryAddress, token, tokenAddress, transactionReceipt }
 	}
 
 	async function depositFixture() {
@@ -103,7 +104,7 @@ describe('Factory', function () {
 			const count = await factory.getTokensLength()
 			expect(count).to.equal(1)
 
-			const tokenAddress2 = await factory.getTokenKey(0)
+			const tokenAddress2 = await factory.getToken(0)
 			expect(tokenAddress2).to.equal(tokenAddress)
 
 			expect(await token.symbol()).to.equal(SYMBOL)
@@ -117,7 +118,7 @@ describe('Factory', function () {
 		it('should emit an event', async () => {
 			const { factory, token, transactionReceipt } = await loadFixture(deployFactoryFixture)
 
-			expect(await factory.create(NAME, SYMBOL, { value: FEE })).to.emit(factory, 'Created')
+			expect(await factory.create(NAME, SYMBOL, TOTAL_SUPPLY, { value: FEE })).to.emit(factory, factory.getEvent('Created').name)
 
 			const event = transactionReceipt?.logs.find(log => log.topics[0] === factory.interface.getEvent('Created').topicHash)
 			const eventData = factory.interface.parseLog(event!)
@@ -148,6 +149,18 @@ describe('Factory', function () {
 			// check base cost was increased
 			const cost = await token.getCost()
 			expect(cost).to.equal(await token.COST_STEP())
+		})
+
+		it('should emit an event', async () => {
+			const { AMOUNT, COST, factory, tokenAddress, transactionReceipt } = await loadFixture(buyTokenFixture)
+
+			expect(await factory.buy(tokenAddress, AMOUNT, { value: COST })).to.emit(factory, factory.getEvent('Bought').name)
+
+			const event = transactionReceipt?.logs.find(log => log.topics[0] === factory.interface.getEvent('Bought').topicHash)
+			const eventData = factory.interface.parseLog(event!)
+			expect(eventData?.args[0]).to.equal(tokenAddress)
+			expect(eventData?.args[1]).to.equal(AMOUNT)
+			expect(eventData?.args[2]).to.equal(COST)
 		})
 	})
 

@@ -11,7 +11,7 @@ import db from './../db'
 import Modal from './Modal'
 import ShortenAddressPretty from './ShortenAddressPretty'
 import { dateToString, getRandomSlug, shortenAddress, showFullDecimals, type TokenData } from '../helpers'
-import type { Factory } from '../../../backend/typechain-types/contracts/tacs/Factory'
+import type { Factory } from '../../../backend/typechain-types/contracts/Factory'
 
 type TxType = {
 	event: 'Created' | 'Bought'
