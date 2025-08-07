@@ -1,5 +1,5 @@
-import { useEffect, useRef, useState, type Dispatch, type SetStateAction } from 'react'
-//import reactLogo from './assets/react.svg'
+import { useEffect, useRef, useState } from 'react'
+import { ethers, type EthersError } from 'ethers'
 
 import { PrimeReactProvider } from 'primereact/api'
 import 'primeflex/primeflex.css'
@@ -7,295 +7,319 @@ import 'primereact/resources/primereact.min.css'
 import 'primeicons/primeicons.css'
 // C:\Projects\voting\frontend\node_modules\primereact\resources\themes
 import 'primereact/resources/themes/lara-light-pink/theme.css'
-
 import { Badge } from 'primereact/badge'
 import { BlockUI } from 'primereact/blockui'
 import { Button } from 'primereact/button'
-import { Card } from 'primereact/card'
-import { Dialog } from 'primereact/dialog'
-import { FloatLabel } from 'primereact/floatlabel';
-import { InputNumber } from 'primereact/inputnumber'
-import { InputText } from 'primereact/inputtext';
 import { Toast } from 'primereact/toast'
 
-import { ethers } from 'ethers'
-
-import { abi as FactoryAbi } from './../../backend/artifacts/contracts/tacs/Factory.sol/Factory.json'
+import * as FactoryJson from './../../backend/artifacts/contracts/tacs/Factory.sol/Factory.json'
 import { type Factory } from './../../backend/typechain-types/contracts/tacs/Factory'
-import { abi as TokenAbi } from './../../backend/artifacts/contracts/tacs/Token.sol/Token.json'
+import * as TokenJson from './../../backend/artifacts/contracts/tacs/Token.sol/Token.json'
 import { type Token } from './../../backend/typechain-types/contracts/tacs/Token'
-import { Icon } from './Icon'
 
-const factoryAddress = '0xCf7Ed3AccA5a467e9e704C703E8D87F634fB0Fc9' // 0x5FbDB2315678afecb367f032d93F642f64180aa3
+import { Icon, shortenAddress, type TokenData } from './helpers'
+import ListItem from './components/ListItem'
+import CreateTokenModal from './components/CreateTokenModal'
+import BuyTokenModal from './components/BuyTokenModal'
+import ListTransactionsModal from './components/ListTransactionsModal'
+import Blink from './components/Blink'
 
-function readableAddress(address: string) {
-	return address.slice(0, 6) + '...' + address.slice(address.length - 4)
-}
-
-type TokenToBuyType = { cost: bigint, token: Factory.TokenSaleStructOutput }
+const factoryAddress = '0x5FbDB2315678afecb367f032d93F642f64180aa3'
 
 export default function App() {
 	const toast = useRef<Toast>(null)
 
-	const [isBlocked, setBlocked] = useState<boolean>(false);
-	const [provider, setProvider] = useState<ethers.BrowserProvider>() //'0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266'
+	const [isBlocked, setBlocked] = useState<boolean>(false)
+	const [provider, setProvider] = useState<ethers.BrowserProvider>()
 	const [account, setAccount] = useState<ethers.JsonRpcSigner>()
 	const [factory, setFactory] = useState<Factory>()
 	const [fee, setFee] = useState<bigint>()
-	const [owner, setOwner] = useState<string>()
-	const [tokens, setTokens] = useState<Array<Factory.TokenSaleStructOutput>>([])
+	const [tokens, setTokens] = useState<Map<string, TokenData>>(new Map())
+
 	const [isCreateModalVisible, setCreateModalVisible] = useState<boolean>(false)
 	const [isCreateButtonVisible, setCreateButtonVisible] = useState<boolean>(false)
-	const [isBuyModalVisible, setBuyModalVisible] = useState<boolean>(false)
-	const [tokenToBuy, setTokenToBuy] = useState<TokenToBuyType>()
-	const [tokenBuyAmount, setTokenBuyAmount] = useState<number>()
 
+	const [selectedToken, setSelectedToken] = useState<TokenData>()
+	const [isBuyModalVisible, setBuyModalVisible] = useState<boolean>(false)
+	const [isListTransactionsModalVisible, setListTransactionsModalVisible] = useState<boolean>(false)
+
+	let MIN_TOTAL_SUPPLY: bigint = 0n
+	let MAX_TOTAL_SUPPLY: bigint = 0n
+
+	function getToken(address: string): Token {
+		if (!provider) {
+			throw new Error('Provider undefined')
+		}
+		const token = new ethers.Contract(address, TokenJson.abi, provider) as unknown as Token
+		return token
+	}
+	
 	const connectAccount = async () => {
-		if (!provider) return alert('Unable to connect account!')
+		if (!provider) {
+			return alert('Unable to connect account!')
+		}
+
+		setBlocked(true)
+
+		const latestBlock = await provider.getBlockNumber()
 
 		const account = await provider.getSigner()
 		setAccount(account)
-		console.log(6661, 'account', account)
 
-		const accounts = await window.ethereum.request({ method: 'eth_requestAccounts' })
-		console.log(6662, 'accounts', accounts)
+		//console.log(6662, 'accounts', await window.ethereum.request({ method: 'eth_requestAccounts' }), await provider.listAccounts())
+		//setAccount(accounts[0])
 
-		const network = await provider.getNetwork()
-		console.log(6663, 'network', network)
+		//const network = await provider.getNetwork()
 
 		// check mismatch between deployed and compiled contracts
-		//const deployedContractCode = await provider.getCode(account.address)
-		//const compiledContractCode = (await ethers.getCon)
+		const deployedContractCode = await provider.getCode(factoryAddress)
+		const compiledContractCode = FactoryJson.deployedBytecode
+		console.log('codes', deployedContractCode.toLowerCase() === compiledContractCode.toLowerCase())
 
-		const factory = new ethers.Contract(factoryAddress, FactoryAbi, provider) as unknown as Factory
+		const factory = new ethers.Contract(factoryAddress, FactoryJson.abi, account) as unknown as Factory
 		setFactory(factory)
 		setCreateButtonVisible(true)
-		console.log(6664, 'contract', factory)
-		
-		// events
-		factory.on(factory.getEvent('Created'), async (token) => {
-			const tokenData = await factory.getTokenSaleByAddress(token)
-			setTokens([tokenData, ...tokens])
-			setBlocked(false)
-		})
-		factory.on(factory.getEvent('Bought'), async (token, amount) => {
-			const tt = await factory.getTokenSaleByAddress(token)
-			console.log(88, tt.raised, tt.sold)
-			setBlocked(false)
-		})
+		//MIN_TOTAL_SUPPLY = await factory.MIN_TOTAL_SUPPLY()
+		//MAX_TOTAL_SUPPLY = await factory.MAX_TOTAL_SUPPLY()
 
 		const fee = await factory.fee()
 		setFee(fee)
 
-		const owner = await factory.owner()
-		setOwner(owner)
+		//const owner = await factory.owner()
+		//console.log('deployer', owner)
 
 		const numTokens = await factory.getTokensLength()
-		const tokenPromises: Array<Promise<Factory.TokenSaleStructOutput>> = []
-		for (let i=0; i<numTokens; i++) {
-			tokenPromises.push(factory.getTokenSaleByIdx(i))
+		
+		const tokenAddressesPromises: Array<Promise<string>> = []
+		for (let i = 0; i < numTokens; i++) {
+			const tokenAddress = factory.getToken(i)
+			tokenAddressesPromises.push(tokenAddress)
 		}
-		const tokens = await Promise.all(tokenPromises)
-		setTokens(tokens.reverse())
+		const tokensAddresses = await Promise.all(tokenAddressesPromises)
+		const initTokens: typeof tokens = new Map()
+		for (const tokenAddress of tokensAddresses) {
+			const token = getToken(tokenAddress)
+			const tokenDatum: TokenData = {
+				address: tokenAddress,
+				available: await token.isAvailable(),
+				cost: await token.getCost(),
+				creatorAddress: await token.creator(),
+				name: await token.name(),
+				raised: await token.getRaised(),
+				sold: await token.getSold(),
+				symbol: await token.symbol(),
+				totalSupply: await token.totalSupply(),
+			}
+			initTokens.set(tokenAddress, tokenDatum)
+		}
+		setTokens(initTokens)
+
+		// events
+		factory.on(factory.getEvent('Created'), async (tokenAddress, event) => {
+			// event.blockNumber is always undefined on startup
+			const eventBlock = await event.getBlock()
+			if (eventBlock.number <= latestBlock) return
+
+			const token = getToken(tokenAddress)
+			const tokenDatum: TokenData = {
+				address: tokenAddress,
+				available: await token.isAvailable(),
+				cost: await token.getCost(),
+				creatorAddress: await token.creator(),
+				name: await token.name(),
+				raised: await token.getRaised(),
+				sold: await token.getSold(),
+				symbol: await token.symbol(),
+				totalSupply: await token.totalSupply(),
+			}
+			setTokens(prev => new Map(prev).set(tokenAddress, tokenDatum))
+			setBlocked(false)
+			toast.current!.show({ severity: 'success', summary: 'Success', detail: 'Token created!' })
+		})
+		factory.on(factory.getEvent('Bought'), async (tokenAddress, amount, value, event) => {
+			// event.blockNumber is always undefined on startup
+			const eventBlock = await event.getBlock()
+			if (eventBlock.number <= latestBlock) return
+
+			const token = getToken(tokenAddress)
+			const tokenDatum: Pick<TokenData, 'available' | 'sold' | 'raised'> = {
+				available: await token.isAvailable(),
+				sold: await token.getSold(),
+				raised: await token.getRaised(),
+			}
+			let symbol: string | undefined = undefined
+			setTokens(prev => {
+				symbol = prev.get(tokenAddress)?.symbol
+				return new Map(prev).set(tokenAddress, {
+					...prev.get(tokenAddress)!,
+					...tokenDatum,
+				})
+			})
+			setBlocked(false)
+			toast.current!.show({ severity: 'success', summary: 'Success', detail: `Bought ${ethers.formatEther(amount)} ${symbol} for €${ethers.formatEther(value)}` })
+		})
+
+		setBlocked(false)
 	}
 
 	const showAccount = () => {
-		if (account) return `Address: ${readableAddress(account.address)}`
+		if (!provider) return `Contract not deployed`
+
+		if (account) return `Address: ${shortenAddress(account.address)}`
 
 		return <span className='font-italic cursor-pointer' onClick={connectAccount}>Connect</span>
 	}
 
 	const fetchProvider = async () => {
+		console.log('Checking provider / wallet...')
+		let provider: ethers.BrowserProvider
 		if (!window.ethereum) {
-			// If MetaMask is not installed, we use the default provider,
-			// which is backed by a variety of third-party services (such
-			// as INFURA). They do not have private keys installed,
-			// so they only have read-only access
-			console.log('MetaMask not installed, using read-only defaults')
-			//setProvider(ethers.getDefaultProvider())
-
+			// If a wallet is not installed, throw error
+			alert('No wallet installed, using read-only defaults')
+			provider = new ethers.JsonRpcProvider('http://localhost:8545') as any
 		} else {
-			console.log('Checking MetaMask...')
-			// Connect to the MetaMask EIP-1193 object. This is a standard
-			// protocol that allows Ethers access to make all read-only
-			// requests through MetaMask.
-			const provider = new ethers.BrowserProvider(window.ethereum)
-			setProvider(provider)
-
-			// It also provides an opportunity to request access to write
-			// operations, which will be performed by the private key
-			// that MetaMask manages for the user.
-			//const signer = await (provider as ethers.BrowserProvider).getSigner()
-
-			//console.log(22, provider)
-			//console.log(33, signer.address)
+			provider = new ethers.BrowserProvider(window.ethereum)
+			//const provider = new ethers.JsonRpcProvider('http://localhost:8545')
 		}
 
-		//console.log(22, provider)
-		//console.log(33, signer.address)
-
-		//await window.ethereum.request({ method: 'eth_requestAccounts'})
-
-		//provider = new ethers.JsonRpcProvider('http://localhost:8545')
-		//signer = await (provider as ethers.BrowserProvider).getSigner()
-
-		//await window.ethereum.request({ method: 'eth_requestAccounts'})
-
-		/*console.log(41, await provider.getBlockNumber())
-		console.log(42, await provider.getBalance('ethers.eth'))
-		console.log(43, ethers.formatEther(await provider.getBalance('ethers.eth')))*/
-	}
-
-	const createToken = async (form: FormData) => {
-		const name = form.get('name')?.toString()
-		const symbol = form.get('symbol')?.toString()
-
-		if (!name || !symbol) {
-			toast.current!.show({ severity: 'error', summary: 'Error', detail: 'Name or Symbol are invalid' });
+		setProvider(provider)
+		const deployedContractCode = await provider.getCode(factoryAddress)
+		if (deployedContractCode === '0x') {
+			alert('No contract found, most likely it wasnt deployed, please deploy and refresh the page')
 			return
 		}
 
-		const transaction = await factory!.connect(account).create(name, symbol, { value: fee })
-		await transaction.wait()
+		//provider.on('debug', console.warn)
+		//provider.on('error', console.error)
+
+		// could use the following to cache blocks and prevent re-fetching
+		/*provider.on('block', async (blockNumber) => {
+			console.log(44, blockNumber)
+		})*/
+	}
+
+	const createTokenFormSubmission = async (name?: string, symbol?: string, totalSupply?: number) => {
+		if (!name || !symbol || !totalSupply) {
+			toast.current!.show({ severity: 'error', summary: 'Error', detail: 'Name or Symbol or Total Supply are invalid' })
+			return
+		}
+
+		try {
+			const transaction = await factory!.connect(account).create(name, symbol, totalSupply, { value: fee })
+			await transaction.wait()
+		} catch (_e) {
+			const e = _e as EthersError
+			if (e.code === 'ACTION_REJECTED') {
+				toast.current!.show({ severity: 'warn', summary: 'User rejected the transaction' })
+			} else {
+				toast.current!.show({ severity: 'error', summary: 'An error happened', detail: e.shortMessage })
+			}
+			return
+		}
 
 		setCreateModalVisible(false)
 		setBlocked(true)
-		toast.current!.show({ severity: 'success', summary: 'Success', detail: 'Token created!' })
 	}
 
-	const buyToken = async () => {
-		if (!tokenBuyAmount) {
-			toast.current!.show({ severity: 'error', summary: 'Error', detail: 'Amount is invalid' });
+	const buyToken = async (amount: number) => {
+		if (!amount) {
+			toast.current!.show({ severity: 'error', summary: 'Error', detail: 'Amount is invalid' })
 			return
 		}
 
-		const totalCost = tokenToBuy!.cost * BigInt(tokenBuyAmount)
-		const parsedAmount = ethers.parseEther(String(tokenBuyAmount))
-		
-		//const t = new ethers.Contract(tokenToBuy!.token.token, TokenAbi, provider) as unknown as Token
-		//t.name | t.symbol
-		const transaction = await factory!.connect(account).buy(tokenToBuy!.token.token, parsedAmount, { value: totalCost })
-		await transaction.wait()
+		const token = getToken(selectedToken!.address)
 
-		setBuyModalVisible(false)
+		const totalCost = await token.getCost() * BigInt(amount)
+		const parsedAmount = ethers.parseEther(String(amount))
+
+		try {
+			const transaction = await factory!.connect(await provider!.getSigner()).buy(selectedToken!.address, parsedAmount, { value: totalCost })
+			await transaction.wait()
+		} catch (_e) {
+			const e = _e as EthersError
+			if (e.code === 'ACTION_REJECTED') {
+				toast.current!.show({ severity: 'warn', summary: 'User rejected the transaction' })
+			} else {
+				toast.current!.show({ severity: 'error', summary: 'An error happened', detail: e.shortMessage })
+			}
+			return
+		}
+
+		setSelectedToken(undefined)
 		setBlocked(true)
-		toast.current!.show({ severity: 'success', summary: 'Success', detail: `Bought ${parsedAmount} ${tokenToBuy!.token.name}` })
 	}
 
 	useEffect(() => {
 		(async () => {
 			await fetchProvider()
 		})()
-	}, [])
+
+		window.ethereum?.on('accountsChanged', async (accounts: Array<string>) => {
+			if (!provider) return
+
+			const account = await provider.getSigner()
+			setAccount(account)
+			console.log('event accountChanged', accounts)
+		})
+
+		/*window.ethereum?.on('networkChanged', async (networkId: string) => {
+			console.log('event networkChanged', networkId)
+		})*/
+	}, [])	
 
 	return (
 		<PrimeReactProvider value={{ ripple: true }}>
 			<Toast ref={toast} />
-			<BlockUI blocked={isBlocked}>
-				<main className='m-5 p-5 border-solid border-round border-primary bg-white'>
-					<div className='m-6 mt-0'>
-						<div className='w-10 text-center font-bold inline-block text-4xl'>
-							Welcome!!
-							<br/><Button icon={Icon({ slug: 'plus' })} onClick={() => setCreateModalVisible(true)} visible={isCreateButtonVisible} />
-						</div>
-						<div className='w-2 inline-block text-right vertical-align-super'>
-							<Badge value={showAccount()} />
-						</div>
+			<BlockUI blocked={isBlocked} fullScreen template={<i className={[Icon({ slug: 'spinner', spin: true }), 'text-8xl', 'text-primary-300'].join(' ')} />} />
+			<main className='m-5 p-5 border-solid border-round border-primary bg-white'>
+				<div className='m-6 mt-0 relative'>
+					<div className='font-bold text-4xl text-center'>
+						<Blink>Welcome to Tacs Memecoin Launchpad</Blink>
+						<br /><Button icon={Icon({ slug: 'plus' })} onClick={() => setCreateModalVisible(true)} visible={isCreateButtonVisible} />
 					</div>
-
-					<div className='flex flex-wrap'>
-						{ tokens.map(token =>
-							<TokenItem
-								key={token.name} factory={factory!} token={token}
-								setBuyModalVisible={setBuyModalVisible}
-								setTokenToBuy={setTokenToBuy}
-							/>
-						)}
+					<div className='absolute right-0 top-0 pt-2'>
+						<Badge value={showAccount()} />
 					</div>
-				</main>
-
-				<Dialog
-					header='Create new token' style={{ width: '300px' }} draggable={false}
-					visible={isCreateModalVisible}
-					onHide={() => {if (!isCreateModalVisible) return; setCreateModalVisible(false); }}>
-					<div className='m-0'>
-						<form action={createToken}>
-							<div className='flex flex-column align-items-center gap-5 pt-4'>
-								<FloatLabel>
-									<InputText name='name' maxLength={20} />
-									<label htmlFor='name'>Name</label>
-								</FloatLabel>
-								<FloatLabel>
-									<InputText name='symbol' minLength={3} maxLength={5} />
-									<label htmlFor='symbol'>Symbol</label>
-								</FloatLabel>
-								<Button type='submit' label='Create' />
-							</div>
-						</form>
-					</div>
-				</Dialog>
-
-				<Dialog
-					header={`Buy ${tokenToBuy?.token.name}`} style={{ width: '300px' }} draggable={false}
-					visible={isBuyModalVisible}
-					onHide={() => {if (!isBuyModalVisible) return; setBuyModalVisible(false); }}>
-					<div className='m-0'>
-						<form action={buyToken}>
-							<div className='flex flex-column align-items-center gap-5 pt-4'>
-								<FloatLabel>
-									<InputNumber name='amount' onValueChange={e => setTokenBuyAmount(e.value ?? 0)} />
-									<label htmlFor='amount'>Amount</label>
-								</FloatLabel>
-								<Button type='submit' label='Buy' />
-							</div>
-						</form>
-					</div>
-				</Dialog>
-			</BlockUI>
-		</PrimeReactProvider>
-	)
-}
-
-function TokenItem(params: {
-	factory: Factory
-	setBuyModalVisible: Dispatch<SetStateAction<boolean>>
-	setTokenToBuy: Dispatch<SetStateAction<TokenToBuyType | undefined>>
-	token: Factory.TokenSaleStructOutput
-}) {
-	const { factory, setBuyModalVisible, setTokenToBuy, token } = params
-
-	const [cost, setCost] = useState<bigint>()
-
-	useEffect(() => {
-		(async () => {
-			const cost = await factory!.getCost(token.sold)
-			setCost(cost)
-		})()
-	}, [])
-
-	// flex align-items-center justify-content-center bg-primary font-bold m-2 border-round
-
-	return (
-		<div className='flex m-4' key={token.name}>
-			<Card
-				title='Symbol'
-				subTitle={token.name}
-				className={['shadow-8'].join(' ')}
-				pt={{
-					body: { className: ['p-0'].join(' ') },
-					title: { className: ['m-0', 'p-3', 'bg-primary', 'border-round-top'].join(' ') },
-					subTitle: { className: ['bg-primary-100', 'p-3'].join(' ') },
-					content: { className: ['p-3'].join(' ') },
-					footer: { className: ['p-3'].join(' ') },
-				}}
-			>
-				<div className='flex flex-column gap-3'>
-					<div><b>Creator:</b> {readableAddress(token.creator)}</div>
-					<div><b>Market cap:</b> €{ethers.formatEther(token.raised)} eth</div>
-					<div><b>Cost:</b> {cost && ethers.formatEther(cost)}</div>
-					<div><Button icon={Icon({ slug: 'shopping-cart' })} onClick={() => { setTokenToBuy({ cost: cost!, token }); setBuyModalVisible(true); }}/></div>
 				</div>
-			</Card>
-		</div>
+
+				<div className='flex flex-wrap justify-content-between'>
+					{Array.from(tokens.values()).reverse().map(token =>
+						<ListItem
+							key={token.address}
+							setBuyModalVisible={setBuyModalVisible}
+							setSelectedToken={setSelectedToken}
+							setListTransactionsModalVisible={setListTransactionsModalVisible}
+							token={token}
+						/>
+					)}
+				</div>
+			</main>
+
+			<CreateTokenModal
+				isVisible={isCreateModalVisible}
+				min={MIN_TOTAL_SUPPLY}
+				max={MAX_TOTAL_SUPPLY}
+				setVisible={setCreateModalVisible}
+				createTokenFormSubmission={createTokenFormSubmission}
+			/>
+
+			{selectedToken && isBuyModalVisible && <BuyTokenModal
+				buyTokenFormSubmission={buyToken}
+				isVisible={isBuyModalVisible}
+				setVisible={setBuyModalVisible}
+				token={selectedToken}
+			/>}
+
+			{selectedToken && isListTransactionsModalVisible && <ListTransactionsModal
+				account={account!.address!}
+				factory={factory!}
+				isBlocked={isBlocked}
+				isVisible={isListTransactionsModalVisible}
+				provider={provider!}
+				setBlocked={setBlocked}
+				setVisible={setListTransactionsModalVisible}
+				token={selectedToken}
+			/>}
+		</PrimeReactProvider>
 	)
 }
