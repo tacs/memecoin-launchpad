@@ -1,12 +1,12 @@
 import { loadFixture, } from '@nomicfoundation/hardhat-toolbox/network-helpers'
 import { expect } from 'chai'
 import { ethers } from 'hardhat'
-//import {  } from 'hardhat/src'
+import { Token__factory } from '../typechain-types'
 
 describe('Factory', function () {
 	const FEE = ethers.parseEther('0.01')
 	const NAME = 'Tacs'
-	const SYMBOL = 'TCS'
+	const SYMBOL = 'TACS'
 	const TOTAL_SUPPLY = ethers.parseEther('1000000')
 
 	async function deployFactoryFixture() {
@@ -178,7 +178,7 @@ describe('Factory', function () {
 
 			const balance = await token.balanceOf(creator.address)
 			const calculcatedCost = ethers.parseEther(String(Number(ethers.formatEther(COST)) * Number(ethers.formatEther(AMOUNT))))
-			expect(balance).to.equal(await factory.TOTAL_SUPPLY() - calculcatedCost)
+			expect(balance).to.equal(await token.totalSupply() - calculcatedCost)
 		})
 	})
 

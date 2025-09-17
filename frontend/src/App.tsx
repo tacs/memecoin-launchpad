@@ -5,35 +5,39 @@ import { PrimeReactProvider } from 'primereact/api'
 import 'primeflex/primeflex.css'
 import 'primereact/resources/primereact.min.css'
 import 'primeicons/primeicons.css'
-// C:\Projects\voting\frontend\node_modules\primereact\resources\themes
+// \node_modules\primereact\resources\themes
 import 'primereact/resources/themes/lara-light-pink/theme.css'
 import { Badge } from 'primereact/badge'
 import { BlockUI } from 'primereact/blockui'
 import { Button } from 'primereact/button'
 import { Toast } from 'primereact/toast'
 
-import * as FactoryJson from './../../backend/artifacts/contracts/tacs/Factory.sol/Factory.json'
-import { type Factory } from './../../backend/typechain-types/contracts/tacs/Factory'
-import * as TokenJson from './../../backend/artifacts/contracts/tacs/Token.sol/Token.json'
-import { type Token } from './../../backend/typechain-types/contracts/tacs/Token'
+import * as FactoryJson from './../../backend/artifacts/contracts/Factory.sol/Factory.json'
+import { type Factory } from './../../backend/typechain-types/contracts/Factory'
+import * as TokenJson from './../../backend/artifacts/contracts/Token.sol/Token.json'
+import { type Token } from './../../backend/typechain-types/contracts/Token'
 
-import { Icon, shortenAddress, type TokenData } from './helpers'
+import { Icon, prettyEther, shortenAddress, type TokenData } from './helpers'
 import ListItem from './components/ListItem'
 import CreateTokenModal from './components/CreateTokenModal'
 import BuyTokenModal from './components/BuyTokenModal'
 import ListTransactionsModal from './components/ListTransactionsModal'
 import Blink from './components/Blink'
 
-const factoryAddress = '0x5FbDB2315678afecb367f032d93F642f64180aa3'
+const factoryAddress = import.meta.env.VITE_CONTRACT_ADDRESS
 
 export default function App() {
 	const toast = useRef<Toast>(null)
 
+	const [isConnected, setIsConnected] = useState<boolean>(false)
+	const [providerInitCounter, setProviderInitCounter] = useState<number>(0)
 	const [isBlocked, setBlocked] = useState<boolean>(false)
 	const [provider, setProvider] = useState<ethers.BrowserProvider>()
 	const [account, setAccount] = useState<ethers.JsonRpcSigner>()
 	const [factory, setFactory] = useState<Factory>()
 	const [fee, setFee] = useState<bigint>()
+	const [minTotalSupply, setMinTotalSupply] = useState<bigint>()
+	const [maxTotalSupply, setMaxTotalSupply] = useState<bigint>()
 	const [tokens, setTokens] = useState<Map<string, TokenData>>(new Map())
 
 	const [isCreateModalVisible, setCreateModalVisible] = useState<boolean>(false)
@@ -43,19 +47,17 @@ export default function App() {
 	const [isBuyModalVisible, setBuyModalVisible] = useState<boolean>(false)
 	const [isListTransactionsModalVisible, setListTransactionsModalVisible] = useState<boolean>(false)
 
-	let MIN_TOTAL_SUPPLY: bigint = 0n
-	let MAX_TOTAL_SUPPLY: bigint = 0n
-
-	function getToken(address: string): Token {
+	function getTokenContract(address: string): Token {
 		if (!provider) {
 			throw new Error('Provider undefined')
 		}
+
 		const token = new ethers.Contract(address, TokenJson.abi, provider) as unknown as Token
 		return token
 	}
 	
 	const connectAccount = async () => {
-		if (!provider) {
+		if (!provider || !factory) {
 			return alert('Unable to connect account!')
 		}
 
@@ -63,8 +65,19 @@ export default function App() {
 
 		const latestBlock = await provider.getBlockNumber()
 
-		const account = await provider.getSigner()
-		setAccount(account)
+		try {
+			const account = await provider.getSigner()
+			setAccount(account)
+		} catch (_e) {
+			const e = _e as EthersError
+			if (e.code === 'ACTION_REJECTED') {
+				toast.current!.show({ severity: 'warn', summary: 'User rejected the transaction' })
+			} else {
+				toast.current!.show({ severity: 'error', summary: 'An error happened', detail: e.shortMessage })
+			}
+			setBlocked(false)
+			return
+		}
 
 		//console.log(6662, 'accounts', await window.ethereum.request({ method: 'eth_requestAccounts' }), await provider.listAccounts())
 		//setAccount(accounts[0])
@@ -74,13 +87,14 @@ export default function App() {
 		// check mismatch between deployed and compiled contracts
 		const deployedContractCode = await provider.getCode(factoryAddress)
 		const compiledContractCode = FactoryJson.deployedBytecode
-		console.log('codes', deployedContractCode.toLowerCase() === compiledContractCode.toLowerCase())
+		console.log('codes matching?', deployedContractCode.toLowerCase() === compiledContractCode.toLowerCase())
 
-		const factory = new ethers.Contract(factoryAddress, FactoryJson.abi, account) as unknown as Factory
-		setFactory(factory)
 		setCreateButtonVisible(true)
-		//MIN_TOTAL_SUPPLY = await factory.MIN_TOTAL_SUPPLY()
-		//MAX_TOTAL_SUPPLY = await factory.MAX_TOTAL_SUPPLY()
+
+		const minTotalSupply = await factory.MIN_TOTAL_SUPPLY()
+		setMinTotalSupply(minTotalSupply)
+		const maxTotalSupply = await factory.MAX_TOTAL_SUPPLY()
+		setMaxTotalSupply(maxTotalSupply)
 
 		const fee = await factory.fee()
 		setFee(fee)
@@ -89,7 +103,6 @@ export default function App() {
 		//console.log('deployer', owner)
 
 		const numTokens = await factory.getTokensLength()
-		
 		const tokenAddressesPromises: Array<Promise<string>> = []
 		for (let i = 0; i < numTokens; i++) {
 			const tokenAddress = factory.getToken(i)
@@ -98,7 +111,7 @@ export default function App() {
 		const tokensAddresses = await Promise.all(tokenAddressesPromises)
 		const initTokens: typeof tokens = new Map()
 		for (const tokenAddress of tokensAddresses) {
-			const token = getToken(tokenAddress)
+			const token = getTokenContract(tokenAddress)
 			const tokenDatum: TokenData = {
 				address: tokenAddress,
 				available: await token.isAvailable(),
@@ -120,7 +133,7 @@ export default function App() {
 			const eventBlock = await event.getBlock()
 			if (eventBlock.number <= latestBlock) return
 
-			const token = getToken(tokenAddress)
+			const token = getTokenContract(tokenAddress)
 			const tokenDatum: TokenData = {
 				address: tokenAddress,
 				available: await token.isAvailable(),
@@ -141,7 +154,7 @@ export default function App() {
 			const eventBlock = await event.getBlock()
 			if (eventBlock.number <= latestBlock) return
 
-			const token = getToken(tokenAddress)
+			const token = getTokenContract(tokenAddress)
 			const tokenDatum: Pick<TokenData, 'available' | 'sold' | 'raised'> = {
 				available: await token.isAvailable(),
 				sold: await token.getSold(),
@@ -156,14 +169,17 @@ export default function App() {
 				})
 			})
 			setBlocked(false)
-			toast.current!.show({ severity: 'success', summary: 'Success', detail: `Bought ${ethers.formatEther(amount)} ${symbol} for €${ethers.formatEther(value)}` })
+			toast.current!.show({ severity: 'success', summary: 'Success', detail: `Bought ${prettyEther(amount)} ${symbol} for €${prettyEther(value)}` })
 		})
 
 		setBlocked(false)
+		setIsConnected(true)
 	}
 
 	const showAccount = () => {
-		if (!provider) return `Contract not deployed`
+		if (!provider) return `Wallet not installed`
+
+		if (!factory) return `Contract not deployed`
 
 		if (account) return `Address: ${shortenAddress(account.address)}`
 
@@ -172,22 +188,19 @@ export default function App() {
 
 	const fetchProvider = async () => {
 		console.log('Checking provider / wallet...')
-		let provider: ethers.BrowserProvider
-		if (!window.ethereum) {
-			// If a wallet is not installed, throw error
-			alert('No wallet installed, using read-only defaults')
-			provider = new ethers.JsonRpcProvider('http://localhost:8545') as any
-		} else {
-			provider = new ethers.BrowserProvider(window.ethereum)
-			//const provider = new ethers.JsonRpcProvider('http://localhost:8545')
-		}
 
+		const provider: ethers.BrowserProvider = new ethers.BrowserProvider(window.ethereum)
+		//const provider = new ethers.JsonRpcProvider('http://localhost:8545')
 		setProvider(provider)
+
 		const deployedContractCode = await provider.getCode(factoryAddress)
+		// no deployed contract found
 		if (deployedContractCode === '0x') {
-			alert('No contract found, most likely it wasnt deployed, please deploy and refresh the page')
 			return
 		}
+
+		const factory = new ethers.Contract(factoryAddress, FactoryJson.abi, provider) as unknown as Factory
+		setFactory(factory)
 
 		//provider.on('debug', console.warn)
 		//provider.on('error', console.error)
@@ -204,8 +217,9 @@ export default function App() {
 			return
 		}
 
+		const totalSupplyInEth = ethers.parseEther(String(totalSupply))
 		try {
-			const transaction = await factory!.connect(account).create(name, symbol, totalSupply, { value: fee })
+			const transaction = await factory!.connect(account).create(name, symbol, totalSupplyInEth, { value: fee })
 			await transaction.wait()
 		} catch (_e) {
 			const e = _e as EthersError
@@ -227,7 +241,7 @@ export default function App() {
 			return
 		}
 
-		const token = getToken(selectedToken!.address)
+		const token = getTokenContract(selectedToken!.address)
 
 		const totalCost = await token.getCost() * BigInt(amount)
 		const parsedAmount = ethers.parseEther(String(amount))
@@ -250,22 +264,30 @@ export default function App() {
 	}
 
 	useEffect(() => {
-		(async () => {
-			await fetchProvider()
-		})()
+		// If a wallet is not installed, throw error
+		if (!window.ethereum) {
+			alert('Wallet not detected')
+			return
+		}
 
-		window.ethereum?.on('accountsChanged', async (accounts: Array<string>) => {
-			if (!provider) return
-
-			const account = await provider.getSigner()
-			setAccount(account)
-			console.log('event accountChanged', accounts)
+		window.ethereum.on('accountsChanged', async (_accounts: Array<string>) => {
+			setProviderInitCounter(prev => prev + 1)
 		})
 
-		/*window.ethereum?.on('networkChanged', async (networkId: string) => {
+		/*window.ethereum.on('networkChanged', async (networkId: string) => {
 			console.log('event networkChanged', networkId)
 		})*/
-	}, [])	
+	}, [])
+
+	useEffect(() => {
+		fetchProvider()
+	}, [providerInitCounter])
+
+	useEffect(() => {
+		if (!provider || !isConnected) return
+
+		connectAccount()
+	}, [provider])
 
 	return (
 		<PrimeReactProvider value={{ ripple: true }}>
@@ -295,13 +317,13 @@ export default function App() {
 				</div>
 			</main>
 
-			<CreateTokenModal
+			{minTotalSupply && maxTotalSupply && <CreateTokenModal
 				isVisible={isCreateModalVisible}
-				min={MIN_TOTAL_SUPPLY}
-				max={MAX_TOTAL_SUPPLY}
+				min={Number(ethers.formatEther(minTotalSupply))}
+				max={Number(ethers.formatEther(maxTotalSupply))}
 				setVisible={setCreateModalVisible}
 				createTokenFormSubmission={createTokenFormSubmission}
-			/>
+			/>}
 
 			{selectedToken && isBuyModalVisible && <BuyTokenModal
 				buyTokenFormSubmission={buyToken}

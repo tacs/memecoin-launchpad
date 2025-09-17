@@ -6,23 +6,19 @@
 	},
 	"devDependencies": {
 		"@nomicfoundation/hardhat-toolbox": "^6.0.0",
-		"@openzeppelin/contracts": "^5.4.0",
 		"@openzeppelin/contracts-upgradeable": "^5.4.0",
-		"@typechain/ethers-v6": "^0.5.1",
-		"@typechain/hardhat": "^9.1.0",
-		"hardhat": "^2.25.0",
-		"typechain": "^8.3.2"
+		"@openzeppelin/hardhat-upgrades": "^3.9.1"
 	},
 	"prettier": {
 		"bracketSpacing": true,
 		"singleQuote": true
 	},
 	"scripts": {
-		"web3:clean": "hardhat clean",
-		"web3:compile": "hardhat compile",
-		"web3:deploy": "hardhat ignition deploy ignition/modules/Factory.ts --network localhost",
-		"web3:deployReset": "hardhat ignition deploy ignition/modules/Factory.ts --network localhost --reset",
-		"web3:serve": "hardhat node",
-		"web3:test": "hardhat test"
+		"clean": "hardhat clean",
+		"compile": "hardhat compile",
+		"deploy": "hardhat ignition deploy ignition/modules/Factory.ts --network localhost",
+		"deployReset": "hardhat ignition deploy ignition/modules/Factory.ts --network localhost --reset",
+		"dev": "hardhat node",
+		"test": "hardhat test"
 	}
 }

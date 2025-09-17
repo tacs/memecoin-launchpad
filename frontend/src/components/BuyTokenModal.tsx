@@ -1,12 +1,11 @@
 import { useRef, useState, type Dispatch, type SetStateAction } from 'react'
-import { ethers } from 'ethers'
 
 import { Button } from 'primereact/button'
 import { FloatLabel } from 'primereact/floatlabel'
 import { InputNumber, type InputNumberChangeEvent } from 'primereact/inputnumber'
 
 import Modal from './Modal'
-import { showFullDecimals, type TokenData } from '../helpers'
+import { prettyEther, type TokenData } from '../helpers'
 
 export default function BuyTokenModal(props: {
 	buyTokenFormSubmission: (amount: number) => Promise<void>
@@ -39,16 +38,16 @@ export default function BuyTokenModal(props: {
 				<div className='w-full'>
 					<div>
 						<div className='w-6 text-right inline-block font-bold'>Per token (€):</div>
-						<div className='w-6 text-left inline-block pl-1'>{ethers.formatEther(props.token.cost)}</div>
+						<div className='w-6 text-left inline-block pl-1'>{prettyEther(props.token.cost, false)}</div>
 					</div>
 					<div className='mt-2 text-primary'>
 						<div className='w-6 text-right inline-block font-bold'>Total est. (€):</div>
-						<div className='w-6 text-left inline-block pl-1'>{showFullDecimals(ethers.formatEther(props.token.cost * BigInt(amount)))}</div>
+						<div className='w-6 text-left inline-block pl-1'>{prettyEther(props.token.cost * BigInt(amount), false)}</div>
 					</div>
 				</div>
 
 				<FloatLabel className='mt-4'>
-					<InputNumber ref={amountRef} value={amount} min={minAmount} max={maxAmount} onChange={e => onChange(e)} suffix=' ETH' />
+					<InputNumber ref={amountRef} value={amount} min={minAmount} max={maxAmount} onChange={e => onChange(e)} />
 					<label>Amount</label>
 				</FloatLabel>
 			</>

@@ -10,7 +10,7 @@ import { FloatLabel } from 'primereact/floatlabel'
 import db from './../db'
 import Modal from './Modal'
 import ShortenAddressPretty from './ShortenAddressPretty'
-import { dateToString, getRandomSlug, shortenAddress, showFullDecimals, type TokenData } from '../helpers'
+import { dateToString, getRandomSlug, prettyEther, shortenAddress, type TokenData } from '../helpers'
 import type { Factory } from '../../../backend/typechain-types/contracts/Factory'
 
 type TxType = {
@@ -259,9 +259,9 @@ export default function ListTransactionsModal(props: {
 							{tx.event === 'Bought' &&
 								<>
 									<AccordionContentItem label='From' value={<ShortenAddressPretty address={tx.from} />} />
-									<AccordionContentItem label='Gas used' value={ethers.formatEther(tx.gas)} />
-									<AccordionContentItem label='Amount' value={showFullDecimals(ethers.formatEther(tx.boughtDetails!.amount!)) + ' ETH'} />
-									<AccordionContentItem label='Value' value={'€ ' + ethers.formatEther(tx.boughtDetails!.value!)} />
+									<AccordionContentItem label='Gas used' value={prettyEther(tx.gas)} />
+									<AccordionContentItem label='Amount' value={prettyEther(tx.boughtDetails!.amount!)} />
+									<AccordionContentItem label='Value' value={'€ ' + prettyEther(tx.boughtDetails!.value!, false)} />
 								</>
 							}
 							<AccordionContentItem label='Timestamp' value={dateToString(tx.timestamp)} />
@@ -279,7 +279,7 @@ function AccordionHeader(props: {
 	return (
 		<div>
 			<div className='inline-block w-2'>{props.tx.event[0].toUpperCase() + props.tx.event.substring(1)}</div>
-			<div className='inline-block w-5 text-center'>{props.tx.event === 'Bought' && ethers.formatEther(props.tx.boughtDetails!.amount).concat(' ETH')}</div>
+			<div className='inline-block w-5 text-center'>{props.tx.event === 'Bought' && prettyEther(props.tx.boughtDetails!.amount)}</div>
 			<div className='inline-block w-5 text-right'>{dateToString(props.tx.timestamp)}</div>
 		</div>
 	)

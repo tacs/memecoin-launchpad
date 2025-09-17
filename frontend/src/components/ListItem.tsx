@@ -1,10 +1,9 @@
 import { type Dispatch, type SetStateAction } from 'react'
-import { ethers } from 'ethers'
 
 import { Button } from 'primereact/button'
 import Card from './Card'
 
-import { Icon, type TokenData } from '../helpers'
+import { Icon, prettyEther, type TokenData } from '../helpers'
 import ShortenAddressPretty from './ShortenAddressPretty'
 
 export default function ListItem(props: {
@@ -30,10 +29,10 @@ export default function ListItem(props: {
 			>
 				<div><b>Address:</b> {<ShortenAddressPretty address={props.token.address} />}</div>
 				<div><b>Creator:</b> {<ShortenAddressPretty address={props.token.creatorAddress} />}</div>
-				<div><b>Total supply:</b> {ethers.formatEther(String(props.token.totalSupply))} eth</div>
-				<div><b>Market cap:</b> {ethers.formatEther(String(props.token.raised))} eth</div>
-				<div><b>Sold:</b> {ethers.formatEther(String(props.token.sold))} eth</div>
-				<div><b>Cost:</b> €{ethers.formatEther(props.token.cost)}</div>
+				<div><b>Total supply:</b> {prettyEther(props.token.totalSupply)} eth</div>
+				<div><b>Market cap:</b> {prettyEther(props.token.raised)} eth</div>
+				<div><b>Sold:</b> {prettyEther(props.token.sold)} eth</div>
+				<div><b>Cost:</b> €{prettyEther(props.token.cost)}</div>
 				<div><b>Available:</b> {isAvailable ? 'Yes': 'No'} <i className={[Icon({ slug: isAvailable ? 'unlock' : 'lock' }), isAvailable ? 'text-green-400' : 'text-red-400'].join(' ')} /></div>
 			</Card>
 		</div>

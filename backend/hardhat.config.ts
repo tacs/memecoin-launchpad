@@ -3,8 +3,12 @@ import '@typechain/hardhat'
 import '@nomicfoundation/hardhat-toolbox'
 import '@nomicfoundation/hardhat-ethers'
 import '@nomicfoundation/hardhat-chai-matchers'
+import '@openzeppelin/hardhat-upgrades'
 
 const config: HardhatUserConfig = {
+	gasReporter: {
+		enabled: false,
+	},
 	mocha: {
 		bail: true,
 	},

@@ -10,8 +10,10 @@ import './Token.sol';
 
 //contract Factory is Initializable {
 contract Factory {
-	uint256 public constant MAX_TOTAL_SUPPLY = 1_000_000_000 ether;
-	uint256 public constant MIN_TOTAL_SUPPLY = 1_000_000 ether;
+	/** 1 quadrillion */
+	uint256 public constant MAX_TOTAL_SUPPLY = 1_000_000_000_000_000;
+	/** 1 million */
+	uint256 public constant MIN_TOTAL_SUPPLY = 1_000_000;
 
 	/** fee */
 	uint256 public immutable fee;
@@ -28,6 +30,7 @@ contract Factory {
 		uint256 raised;
 		uint256 sold;
 		string symbol;
+		uint256 totalSupply;
 	}
 	mapping(address => TokenData) tokenss;
 
@@ -52,7 +55,8 @@ contract Factory {
 
 	/**
 	 * more gas efficient to return the length of the array than to store it in a variable, as i've seen a few articles online doing it
-	 * mostly because the other variable would need gas to be updated whenever pushing or poping an element, however reading is the same gas
+	 * mostly because the other variable would need gas to be updated whenever pushing or poping an element
+	 * however reading a variable or running this function requires the same gas
 	*/
     function getTokensLength() public view returns (uint) {
         return tokens.length;
@@ -90,15 +94,23 @@ contract Factory {
 		address _tokenAddress,
 		uint256 _amount
 	) external payable {
+		address _buyerAddress = msg.sender;
         Token _token = Token(_tokenAddress);
 
-        // check conditions
+        // check token availability
         require(_token.isAvailable(), 'This token has reached its goal, its not available anymore');
+		// do not allow someone to own more than the cap established during the creation
+		uint256 numberOfTokensLeftToBuy = _token.getNumberOfTokensLeftToBuy(_buyerAddress);
+		require(_amount > numberOfTokensLeftToBuy, string(abi.encodePacked('You can only buy ', numberOfTokensLeftToBuy, ' tokens before reaching the holder cap')));
+		
+		// only allow a minimum amount per purchase
         require(_amount >= 1 ether, 'Amount too low, it needs to be equal or greater than 1');
+		// only allow a maximum amount per purchase
         require(_amount <= 100 ether, 'Amount too high, it needs to be lower than 100');
 
 		uint256 _value = msg.value;
-        uint256 _price = _token.getCost() * (_amount / 1 ether);
+        //uint256 _price = _token.getCost() * (_amount / 1 ether);
+		uint256 _price = _token.getCost() * _amount;
 
         // make sure enough eth is sent
         require(_value >= _price, string(abi.encodePacked('Not enough ETH, it needs to be at least ', _price)));
@@ -107,13 +119,13 @@ contract Factory {
 		_token.increaseSold(_amount);
         _token.increaseRaised(_value);
 
-        // make sure raised goal nor sold goal arent met
+        // check if the availability needs to be updated according to the raised goal or the sold goal
         if (_token.getSold() >= _token.SOLD_GOAL() || _token.getRaised() >= _token.RAISED_GOAL()) {
             _token.setAvailable(false);
         }
 
 		// transfer tokens
-		_token.transfer(msg.sender, _amount);
+		_token.transfer(_buyerAddress, _amount);
 
         // emit an event
 		emit Bought(_tokenAddress, _amount, _value);

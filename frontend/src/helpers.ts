@@ -1,3 +1,5 @@
+import { ethers } from 'ethers'
+
 export type TokenData = {
 	address: string
 	available: boolean
@@ -14,9 +16,12 @@ export function getRandomSlug() {
 	return 'k' + String(Math.round(Math.random() * 1000000))
 }
 
-export function showFullDecimals(value: number | string) {
-	const v = typeof value === 'string' ? Number(value) : value
-	return v.toFixed(4)
+export function prettyEther(value: bigint, addSuffix: boolean = true) {
+	const [integer, decimal] = ethers.formatEther(value).split('.')
+	const formattedInteger = integer.replace(/\B(?=(\d{3})+(?!\d))/g, ' ')
+	const number = decimal && Number(decimal) !== 0 ? `${formattedInteger}.${decimal}` : formattedInteger
+	const suffix = addSuffix ? ' ETH' : ''
+	return number + suffix
 }
 
 export function dateToString(timestamp: number) {
