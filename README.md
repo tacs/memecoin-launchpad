@@ -5,6 +5,9 @@ A simple meme coin launch pad app - a very rudimentary idea based on pump.fun
 # Backend
 #### Features:
 1. :construction::construction: Add a proxy to allow upgrade contracts easily - hardhat contains an Upgradeable contract that can be extended from
+1. :construction::construction: Add a min/max total supply
+1. :construction::construction: Add a way to prevent whales
+1. :construction::construction: Automatically handle according to percentages (SUPPLY_PERCENTAGE_FOR_SALE, ...)
 
 #### Instructions
 1. To start the backend using hardhat: `cd backend && npm run web3:serve`
@@ -12,6 +15,7 @@ A simple meme coin launch pad app - a very rudimentary idea based on pump.fun
 # Frontend
 #### Features
 1. Uses [dexie](https://github.com/dexie/Dexie.js) to cache the transactions
+1. :construction::construction: Allow to set total supply and what percentage to use for sale, LP (Liquidity Pool), marketing, team, reserve
 
 #### Instructions
 1. To start the frontend: `cd frontend && npm run dev`
